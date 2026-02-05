@@ -269,12 +269,6 @@ SFT_ret:
 ；=========================================================
 ； LCD show state
 ;==========================================================
-IDLE_STR:        db "IDLE            ",0
-SOAK_RAMP_STR:   db "SOAK RAMP       ",0
-SOAK_HOLD_STR:   db "SOAK HOLD       ",0
-REFLOW_RAMP_STR: db "REFLOW RAMP     ",0
-REFLOW_HOLD_STR: db "REFLOW HOLD     ",0
-ERROR_STR:       db "ERROR           ",0
 
 LCD_ShowState_FromFlags:
     lcall LCD_GotoLine1
