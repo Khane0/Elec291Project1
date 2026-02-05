@@ -543,5 +543,38 @@ Load_y MAC
 	mov y+2, #low (%0 / 0x10000) 
 	mov y+3, #high(%0 / 0x10000) 
 ENDMAC
+
+; Copy 4-byte variable -> x
+Load_X_var MAC
+    mov x+0, %0+0
+    mov x+1, %0+1
+    mov x+2, %0+2
+    mov x+3, %0+3
+ENDMAC
+
+Load_Y_var MAC
+    mov y+0, %0+0
+    mov y+1, %0+1
+    mov y+2, %0+2
+    mov y+3, %0+3
+ENDMAC
+
+; Copy x -> 4-byte variable
+Store_X_var MAC
+    mov %0+0, x+0
+    mov %0+1, x+1
+    mov %0+2, x+2
+    mov %0+3, x+3
+ENDMAC
+
+Load_BCD_4byte MAC
+    mov bcd+0, %0+0   ; lowest 2 digits
+    mov bcd+1, %0+1
+    mov bcd+2, %0+2
+    mov bcd+3, %0+3
+    clr a
+    mov bcd+4, a      ; highest digits unused / zero
+ENDMAC
 	
 $LIST
+
