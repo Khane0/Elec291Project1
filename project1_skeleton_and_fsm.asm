@@ -39,20 +39,21 @@ org 0x002B
 dseg at 0x30
 Count1ms:     ds 2 ; Used to determine when one second has passed
 ;Time_Secs keeps track of time in seconds
-Time_Secs:  ds 1 
+Time_Secs:  ds 4
+Seconds_Bin: ds 4 
 ;Four below should be set by the keypad subroutine/s to be used in the other subroutines
 ;I'm worried we might need to convert things from 1 byte to 4 bytes in some cases, but we can test that
-Soak_Temp: ds 4
-Soak_Time: ds 4
-Reflow_Temp: ds 4
-Reflow_Time: ds 4
+Soak_Temp_Bin: ds 4
+Soak_Time_Bin: ds 4
+Reflow_Temp_Bin: ds 4
+Reflow_Time_Bin: ds 4
 ;Stop_Temp, Flat_Time, and Hold_Time are used in FSM to start/stop oven power
 ;at certain times. Ex. We set Soak_Time = 60 s, then Hold_Time = Current Time + Soak_Time
 ;as I am writing this, I realize Flat_Time and Hold_Time are probably interchangable and we only need one
-Stop_Temp: ds 4
-Flat_Time: ds 4
-Hold_Time: ds 4
-Current_Temp: ds 4
+Stop_Temp_Bin: ds 4
+Flat_Time_Bin: ds 4
+Hold_Time_Bin: ds 4
+Current_Temp_Bin: ds 4
 ; Math.inc stuff
 bcd: ds 5
 x:   ds 4
@@ -95,12 +96,12 @@ Check_Temp: ; Calls to this might be missing in some phases
 	
 	
 E_shutoff: ; Calls to this might be missing in some phases
-;Emergency Shuttoff once time hits sixty seconds, check if current temp is greater than or equal to 50C
+;Emergency Shuttoff once time hits sixty seconds, check if current temp is less than or equal to 50C
 ;If not, clear all state flags and goes back to initial settings state. Turns off oven
 	clr a
 	mov a, Time_Secs
 	cjne a, #0x60, Skip_E_shutoff
-	Load_X(Current_Temp)
+	Load_X_var(Current_Temp_Bin)
 	Load_y(50)
 	lcall x_lteq_y
 	jnb mf, Skip_E_shutoff
@@ -218,11 +219,11 @@ settings_loop:
 	jnb key.1, $
 	; Start the oven and move on to next phase
 	setb phase_one_flag
-	Load_X(Soak_Temp)
+	Load_X_var(Soak_Temp_Bin)
 	Load_y(20)
 	lcall sub32
-	mov Stop_Temp, x
-	Load_y(Stop_Temp)
+	Store_X_var(Stop_Temp_Bin)
+	Load_y_var(Stop_Temp_Bin)
 	setb OVEN_POWER
 	setb oven_on_flag
 	ljmp check_stop
@@ -256,7 +257,7 @@ soak_ramp:
 	clr seconds_flag
 	lcall E_shutoff ; Check emergency shutoff conditions
 	lcall LCD_module
-	Load_X(Current_Temp)
+	Load_X_var(Current_Temp_Bin)
 	lcall x_gteq_y
 	jnb mf, p1_stop ; If Current temp is desired temp, continue to next phase, else restart soak_ramp loop
 	clr OVEN_POWER
@@ -264,9 +265,11 @@ soak_ramp:
 	setb phase_two_flag
 ;Set shut_off temp for curve flattening.
 	Load_y(10)
-	Load_X(Time_Secs)
+;Convert Time_Secs to HEX in Seconds_Bin
+;Then Load_X_var Seconds_Bin
+	Load_X_var(Time_Secs)
 	lcall add32
-	mov Flat_Time, x
+	Store_X_var(Flat_Time_Bin)
 	ljmp temp_flatten_one
 	
 flat_one_stop:
@@ -280,8 +283,10 @@ temp_flatten_one: ; Turn off for fixed amount of time to reach temp without goin
 	mov a, Time_Secs
 	clr seconds_flag
 	cjne a, Flat_Time, flat_one_stop
-	Load_y(Soak_Time)
-	Load_X(Time_Secs)
+	Load_y_var(Soak_Time_Bin)
+;Convert Time_Secs to HEX in Seconds_Bin
+;Then Load_X_var Seconds_Bin
+	Load_X_var(Time_Secs)
 	lcall add32
 	mov Hold_Time, x
 	ljmp soak_hold
@@ -313,4 +318,5 @@ reflow_hold:
 	jnb seconds_flag, reflow_hold
 	clr seconds_flag
 	
+
 END
