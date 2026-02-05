@@ -1,11 +1,4 @@
 ；==========================================================================
-;STOP priority shutdown
-;Handle_RunButton_Toggle instead of check_start and check _stop
-;Call Handle_RunButton_Toggle at the highest priority position of all loops
-;eg: nthe beginning of: settings_loop and in Service_1s per second
-
-; Function: turn off oven + clear all phase flags + reset counters
-
 ; -------- button Start/Stop --------
 RUN_BTN        equ key.1     ;active-low
 
@@ -125,12 +118,6 @@ LPS_done:
     ret
 
 ; ---------- state display ----------
-IDLE_STR:        db "IDLE            ",0
-SOAK_RAMP_STR:   db "SOAK RAMP       ",0
-SOAK_HOLD_STR:   db "SOAK HOLD       ",0
-REFLOW_RAMP_STR: db "REFLOW RAMP     ",0
-REFLOW_HOLD_STR: db "REFLOW HOLD     ",0
-ERROR_STR:       db "ERROR           ",0
 
 LCD_ShowState_FromFlags:
     lcall LCD_GotoLine1
@@ -170,7 +157,13 @@ LS_err:
     lcall LCD_PrintString
     ret
 ; ============================================================
+;STOP priority shutdown
+;Handle_RunButton_Toggle instead of check_start and check _stop
+;Call Handle_RunButton_Toggle at the highest priority position of all loops
+;eg: nthe beginning of: settings_loop and in Service_1s per second
 
+; Function: turn off oven + clear all phase flags + reset counters
+;============================================================
 Handle_RunButton_Toggle:
     ; if NOT pressed, return
     jb  RUN_BTN, HR_ret
