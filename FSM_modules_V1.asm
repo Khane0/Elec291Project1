@@ -117,45 +117,7 @@ LPS:
 LPS_done:
     ret
 
-; ---------- state display ----------
-
-LCD_ShowState_FromFlags:
-    lcall LCD_GotoLine1
-
-    jb  error_flag,        LS_err
-    jb  phase_four_flag,   LS_p4
-    jb  phase_three_flag,  LS_p3
-    jb  phase_two_flag,    LS_p2
-    jb  phase_one_flag,    LS_p1
-
-    mov dptr, #IDLE_STR
-    lcall LCD_PrintString
-    ret
-
-LS_p1:
-    mov dptr, #SOAK_RAMP_STR
-    lcall LCD_PrintString
-    ret
-
-LS_p2:
-    mov dptr, #SOAK_HOLD_STR
-    lcall LCD_PrintString
-    ret
-
-LS_p3:
-    mov dptr, #REFLOW_RAMP_STR
-    lcall LCD_PrintString
-    ret
-
-LS_p4:
-    mov dptr, #REFLOW_HOLD_STR
-    lcall LCD_PrintString
-    ret
-
-LS_err:
-    mov dptr, #ERROR_STR
-    lcall LCD_PrintString
-    ret
+ 
 ; ============================================================
 ;STOP priority shutdown
 ;Handle_RunButton_Toggle instead of check_start and check _stop
