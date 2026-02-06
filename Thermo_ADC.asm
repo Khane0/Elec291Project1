@@ -2,8 +2,9 @@ $NOLIST
 $MODMAX10
 $LIST
 
-CLK  EQU 33333333
-BAUD EQU 57600
+BAUD EQU 115200
+FREQ   EQU 33333333
+T2LOAD EQU 65536-(FREQ/(32*BAUD))
 
 VREF_MV   EQU 4096
 
@@ -14,11 +15,7 @@ R2_OHM     EQU 10
 
 TCOLD10    EQU 220        ;room temperature
 
-
-TIMER_1_RELOAD EQU (256-((2*CLK)/(12*32*BAUD)))
-
-
-TIMER0_RELOAD_1MS EQU (65536-(CLK/(12*1000)))
+TIMER0_RELOAD_1MS EQU (65536-(FREQ/(12*1000)))
 
 ORG 0000H
     ljmp main
@@ -39,21 +36,17 @@ CSEG
 
 ; -------------------- UART / print --------------------
 Initialize_Serial_Port:
-    clr TR1
-    anl TMOD, #0x0F
-    orl TMOD, #0x20        ; T1 mode2
-    orl PCON, #080H        ; SMOD=1
-    mov TH1,  #low(TIMER_1_RELOAD)
-	mov TL1,  #low(TIMER_1_RELOAD)
-	mov SCON, #050H
-	setb TR1
-	setb TI
-	ret
+    mov RCAP2H, #high(T2LOAD)
+    mov RCAP2L, #low(T2LOAD)
+    mov T2CON,  #034H     
+    mov SCON,   #052H
+    setb TI                 
+    ret
+
 
 putchar:
-    jbc TI, putchar_send
-    sjmp putchar
-putchar_send:
+    jnb TI, putchar        ; wait until TI=1
+    clr TI                 ; clear TI before sending
     mov SBUF, a
     ret
 
@@ -255,7 +248,7 @@ Forever:
     Load_y(41)
     lcall div32
 
-    ; x = TotalT10 = Thot10 + Tcold10 (assumed)
+    ; x = TotalT10 = Thot10 + Tcold10
     Load_y(TCOLD10)
     lcall add32
 
