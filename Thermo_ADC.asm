@@ -44,10 +44,11 @@ Initialize_Serial_Port:
     orl TMOD, #0x20        ; T1 mode2
     orl PCON, #080H        ; SMOD=1
     mov TH1,  #low(TIMER_1_RELOAD)
-    mov TL1,  #low(TIMER_1_RELOAD)
-    setb TR1
-    mov SCON, #052H
-    ret
+	mov TL1,  #low(TIMER_1_RELOAD)
+	mov SCON, #050H
+	setb TR1
+	setb TI
+	ret
 
 putchar:
     jbc TI, putchar_send
