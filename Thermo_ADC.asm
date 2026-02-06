@@ -5,6 +5,7 @@ $LIST
 BAUD EQU 115200
 FREQ   EQU 33333333
 T2LOAD EQU 65536-(FREQ/(32*BAUD))
+Ave_num  EQU 32 
 
 VREF_MV   EQU 4096
 
@@ -13,7 +14,7 @@ OP07_CH   EQU 2    ; A2 (Vout)
 R1_OHM     EQU 3300
 R2_OHM     EQU 10
 
-TCOLD10    EQU 220        ;room temperature
+TCOLD10    EQU 220       
 
 TIMER0_RELOAD_1MS EQU (65536-(FREQ/(12*1000)))
 
@@ -207,6 +208,40 @@ Read_ADC:
     anl A, #0FH
     mov R1, A
     ret
+; -------------------- eliminate noise --------------------    
+Average_ADC:
+    mov R4, A             
+
+    ; x = 0  
+    mov x+0, #0
+    mov x+1, #0
+    mov x+2, #0
+    mov x+3, #0
+
+    mov R3, #Ave_num
+
+Avg_Loop:
+    mov A, R4
+    lcall Read_ADC         ; returns R1:R0
+
+    ; y = (R1:R0)
+    mov y+0, R0
+    mov y+1, R1
+    mov y+2, #0
+    mov y+3, #0
+
+    lcall add32            ; x = x + y
+
+    djnz R3, Avg_Loop
+
+    ; x = x / Ave_num
+    Load_y(Ave_num)
+    lcall div32
+
+    ; return avg in R1:R0
+    mov R0, x+0
+    mov R1, x+1
+    ret
 
 ; -------------------- init --------------------
 Init_All:
@@ -218,13 +253,13 @@ Init_All:
 
 ; -------------------- main --------------------
 main:
-    mov sp, #0x7FH
+    mov SP, #7FH
     lcall Init_All
 
 Forever:
     ; Read OP07 (A2)
     mov A, #OP07_CH
-    lcall Read_ADC
+    lcall Average_ADC
 
     ; x = ADC (12-bit)
     mov x+0, R0
