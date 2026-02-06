@@ -73,13 +73,18 @@ mf: dbit 1 ; Math.inc stuff
 
 cseg
 ;LCD and other pins
-
-
+;Variable selection for storing numbers. Keypad
+SW0     BIT 0E8h.0
+SW1     BIT 0E8h.1
+SW2     BIT 0E8h.2
+SW3     BIT 0E8h.3
+SW4     BIT 0E8h.4
+;End keypad
 $NOLIST
 ;FSM main can include the files that multiple modules will use 
 $include(LCD_4bit.inc) 
 $include(math32.inc)
-
+$include(V1_Read_keypad_modified.inc)
 ;===MODULES WE'RE GONNA INCLUDE==
 ;$include(keypad_input.inc)
 ;$include(LCD_display.inc)
@@ -92,12 +97,59 @@ $LIST
 
 ;%%%%%%%%%%% do we put main here?
 main:
+	;Configures keypad stuff, pasted from keypad module
+	mov SP, #7FH
+	clr a
+	mov LEDRA, a
+	mov LEDRB, a
+	mov bcd+0, a
+	mov bcd+1, a
+	mov bcd+2, a
+	mov bcd+3, a
+	mov bcd+4, a
 	
+	mov Soak_Temp+0, a
+	mov Soak_Temp+1, a
+	mov Soak_Temp+2, a
+	mov Soak_Temp+3, a
+	mov Soak_Temp+4, a
+	
+	mov Soak_Time+0, a
+	mov Soak_Time+1, a
+	mov Soak_Time+2, a
+	mov Soak_Time+3, a
+	mov Soak_Time+4, a
+	
+	mov Reflow_Temp+0, a
+	mov Reflow_Temp+1, a
+	mov Reflow_Temp+2, a
+	mov Reflow_Temp+3, a
+	mov Reflow_Temp+4, a
+	
+	mov Reflow_Time+0, a
+	mov Reflow_Time+1, a
+	mov Reflow_Time+2, a
+	mov Reflow_Time+3, a
+	mov Reflow_Time+4, a
+	lcall Configure_Keypad_Pins
+;keypad stuff end
 
 State0Setting: 
 	;%%%%%set the state flag to 0
 	lcall ;{whatever check_temp function label is at the start}
-	;lcall ;{whatever keypad function label is at the start} 
+	;start of keypad calls
+	lcall Keypad ;{whatever keypad function label is at the start} 
+	jb SW4, display_var ; Will be removed eventually. Used just for testing purposes
+	lcall Display ; Will be removed eventually. Used just for testing purposes
+	lcall store_variable
+	sjmp default_display ; Will be removed eventually. Used just for testing purposes
+display_var: ; Will be removed eventually. Used just for testing purposes
+	lcall variable_display ; Will be removed eventually. Used just for testing purposes
+default_display: ; Will be removed eventually. Used just for testing purposes
+	jnc State0Setting ; must be here for shifting digits as entered
+	lcall Shift_Digits_Left
+	ljmp State0Setting
+;End of keypad calls 
 	;lcall ;{whatever LCD  display function label is at the start}
 	jnb oven_on_flag, State0Setting ;if the oven isnt on stay in settings
 	ljmp State1RampSoak
@@ -189,4 +241,5 @@ Max_T_shutoff:
 	;%%%%%%%%%%hmmmm do we raise the error flag?
 	ljmp State5Shutdown
 Skip_T_shutoff
+
 	ret
