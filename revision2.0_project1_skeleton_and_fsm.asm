@@ -7,6 +7,23 @@ TIMER2_RATE   EQU 1000     ; 1000Hz, for a timer tick of 1ms
 TIMER2_RELOAD EQU ((65536-(CLK/(12*TIMER2_RATE))))
 
 OVEN_POWER  			equ P1.1 ; Pin to turn the SSR on/off
+SOUND_OUT				equ P2.1
+
+ON_OFF					equ SWA.0
+
+
+
+
+;//// CLEANUP REQUIRED /////
+;add the math include with load variables and insert where needed
+
+;when comparing integers with binary variables using gteq lteq etc,
+;convert the bin ones to hex (maybe)
+
+;/////////////////
+
+
+
 
 ; Reset vector
 org 0x0000
@@ -70,6 +87,8 @@ seconds_flag: dbit 1 ; Set to one in the ISR every time 1000 ms had passed
 e_shutdown_flag: dbit 1
 oven_on_flag: dbit 1 ; Set to one when start is pressed, zero when emergency shutoff, stop, reset, finished
 mf: dbit 1 ; Math.inc stuff
+state_transitioning: dbit 1 ;set to one when going from one state to the next
+;%%%%%%link pin for speaker to this
 
 cseg
 ;LCD and other pins
@@ -92,12 +111,138 @@ $include(V1_Read_keypad_modified.inc)
 ;do we need a PWM module?
 $LIST
 	
-;%%%%%%%%%%%% timer 2 stuff
+;================TIMER 2 STUFF=======
+;---------------------------------;
+; Routine to initialize the ISR   ;
+; for timer 0                     ;
+;---------------------------------;
+Timer0_Init:
+	mov a, TMOD
+	anl a, #0xf0 ; Clear the bits for timer 0
+	orl a, #0x01 ; Configure timer 0 as 16-timer
+	mov TMOD, a
+	mov TH0, #high(TIMER0_RELOAD)
+	mov TL0, #low(TIMER0_RELOAD)
+	; Enable the timer and interrupts
+    setb ET0  ; Enable timer 0 interrupt
+    setb TR0  ; Start timer 0
+	ret
 
+;---------------------------------;
+; ISR for timer 0.  Set to execute;
+; every 1/4096Hz to generate a    ;
+; 2048 Hz square wave at pin P3.7 ;
+;---------------------------------;
+Timer0_ISR:
+	;clr TF0  ; According to the data sheet this is done for us already.
+	mov TH0, #high(TIMER0_RELOAD) ; Timer 0 doesn't have autoreload in the CV-8052
+	mov TL0, #low(TIMER0_RELOAD)
+	;cpl SOUND_OUT
+	reti
 
-;%%%%%%%%%%% do we put main here?
+;---------------------------------;
+; Routine to initialize the ISR   ;
+; for timer 2                     ;
+;---------------------------------;
+Timer2_Init:
+	mov T2CON, #0 ; Stop timer/counter.  Autoreload mode.
+	mov TH2, #high(TIMER2_RELOAD)
+	mov TL2, #low(TIMER2_RELOAD)
+	; Set the reload value
+	mov RCAP2H, #high(TIMER2_RELOAD)
+	mov RCAP2L, #low(TIMER2_RELOAD)
+	; Init One millisecond interrupt counter.  It is a 16-bit variable made with two 8-bit parts
+	clr a
+	mov Count1ms+0, a
+	mov Count1ms+1, a
+	; Enable the timer and interrupts
+    setb ET2  ; Enable timer 2 interrupt
+    setb TR2  ; Enable timer 2
+	ret
+
+;---------------------------------;
+; ISR for timer 2                 ;
+;---------------------------------;
+Timer2_ISR:
+	clr TF2  ; Timer 2 doesn't clear TF2 automatically. Do it in ISR
+	
+	; The two registers used in the ISR must be saved in the stack
+	push acc
+	push psw
+	
+	; Increment the 16-bit one mili second counter
+	inc Count1ms+0    ; Increment the low 8-bits first
+	mov a, Count1ms+0 ; If the low 8-bits overflow, then increment high 8-bits
+	jnz Inc_Done
+	inc Count1ms+1
+
+Inc_Done:
+	mov a, State_flag
+	cjne a, #2, CheckState4:
+	sjmp PWM
+CheckState4:
+	cjne a, #4, SkipPWM:
+PWM:
+	clr OVEN_POWER
+	mov a, Count1ms+0
+	cjne a, #low(800), SkipPWM:
+	mov a, Count1ms+1
+	cjne a, #high(800), SkipPWM:
+	setb OVEN_POWER
+SkipPWM:
+	; Check if one second has passed
+	mov a, Count1ms+0
+	cjne a, #low(1000), Timer2_ISR_done ; Warning: this instruction changes the carry flag!
+	mov a, Count1ms+1
+	cjne a, #high(1000), Timer2_ISR_done
+	
+	clr OVEN_POWER
+	
+	; 1 second has passed.  Set a flag so the main program knows
+	setb seconds_flag ; Let the main program know half second had passed
+	; Toggle LEDR0 so it blinks
+	cpl LEDRA.0
+	;cpl TR0 ; Enable/disable timer/counter 0. This line creates a beep-silence-beep-silence sound.
+	; Reset to zero the milli-seconds counter, it is a 16-bit variable
+	clr a
+	mov Count1ms+0, a
+	mov Count1ms+1, a
+	
+	; Increment or reset the Time_Elapsed counter
+	mov a, Time_Elapsed 
+	jb state_transitioning, Time_Elapsed_Reset 
+	add a, #0x01
+	clr SOUND_OUT
+	sjmp Decimal_Adjust ;%%%% maybe check on this
+Time_Elapsed_Reset:
+	mov a, #0x00 
+	setb SOUND_OUT
+Decimal_Adjust:
+	da a ; Decimal adjust instruction.  Check datasheet for more details!
+	mov Time_Elapsed, a ;%%%% maybe check on this
+;assign oven on flag to the on/off switch unless in shutdown, where it must be off
+	cjne State_flag, #5, Not_In_S5
+	clr oven_on_flag
+	sjmp Timer2_ISR_done
+Not_In_S5:
+	mov oven_on_flag, ON_OFF
+	
+Timer2_ISR_done:
+	pop psw
+	pop acc
+	reti
+;=============TIMER 2 STUFF DONE =========
+
 main:
-	;Configures keypad stuff, pasted from keypad module
+	mov SP, #0x7F
+    lcall Timer0_Init
+    lcall Timer2_Init
+    
+    setb EA   ; Enable Global interrupts
+	setb seconds_flag
+	mov Time_Elapsed, #0x00 ; Initialize time elapsed to zero
+;======CONFIGS KEYPAD STUFF====
+;pasted from keypad module
 	mov SP, #7FH
 	clr a
 	mov LEDRA, a
@@ -132,13 +277,15 @@ main:
 	mov Reflow_Time+3, a
 	mov Reflow_Time+4, a
 	lcall Configure_Keypad_Pins
-;keypad stuff end
-
-State0Setting: 
-	;%%%%%set the state flag to 0
-	lcall ;{whatever check_temp function label is at the start}
-	;start of keypad calls
-	lcall Keypad ;{whatever keypad function label is at the start} 
+;====KEYPAD STUFF END======
+	
+State0Setting:
+	jnb seconds_flag, State0Setting
+	clr seconds_flag 
+	mov State_flag, #0
+	;lcall ;%%%%{whatever check_temp function label is at the start}
+;start of keypad calls
+	lcall Keypad  
 	jb SW4, display_var ; Will be removed eventually. Used just for testing purposes
 	lcall Display ; Will be removed eventually. Used just for testing purposes
 	lcall store_variable
@@ -152,62 +299,78 @@ default_display: ; Will be removed eventually. Used just for testing purposes
 ;End of keypad calls 
 	;lcall ;{whatever LCD  display function label is at the start}
 	jnb oven_on_flag, State0Setting ;if the oven isnt on stay in settings
+	setb state_transitioning
 	ljmp State1RampSoak
 
 State1Shutdown:
 	ljmp State5Shutdown
 State1RampSoak:
-	;%%%%%%% set the state flag to 1
+	jnb seconds_flag, State1RampSoak
+	clr seconds_flag
+	mov State_flag, #1
+	clr state_transitioning
 	;below: basically gets stop temp (15 less than our soak temp)
 	mov Stop_Temp_Bin, Soak_Temp_Bin
 	Load_x(Stop_Temp_Bin)
 	Load_y(15)
 	lcall sub32
 	jnb oven_on_flag, State1Shutdown
-	;%%%%%% turn on SSR
-	;lcall ;{whatever check_temp function label is at the start}
+	setb OVEN_POWER
+	;lcall ; %%%%{whatever check_temp function label is at the start}
 	lcall E_shutoff
 	Load_y(Current_Temp_Bin)
 	lcall x_gteq_y 
 	jb mf, State1RampSoak ;if stop temp is >= current temp stay in loop
+	setb state_transitioning
 	ljmp State2HoldSoak
 
 State2Shutdown:
 	ljmp State5Shutdown
 State2HoldSoak:
-	;%%%%%% set the state flag to 2
+	jnb seconds_flag, State2HoldSoak
+	clr seconds_flag
+	mov State_flag, #2
+	clr state_transitioning
 	jnb oven_on_flag, State2Shutdown
-	;lcall ;{whatever check_temp function label is at the start}
+	;lcall ;%%%%{whatever check_temp function label is at the start}
 	Load_x(Time_Elapsed_Bin)
 	Load_y(Soak_Time_Bin)
 	lcall x_gteq_y
-	jnb mf, State2HoldSoak
+	jnb mf, State2HoldSoak ; if time elapsed is < soaktime stay
+	setb state_transitioning
 	ljmp State3RampReflow
 	
 State3Shutdown:
 	ljmp State5Shutdown
 State3RampReflow:
-	;%%%%%%% set the state flag to 3
+	jnb seconds_flag, State3RampReflow
+	clr seconds_flag
+	mov State_flag, #3
+	clr state_transitioning
 	mov Stop_Temp_Bin, Reflow_Temp_Bin
 	Load_x(Stop_Temp_Bin)
 	Load_y(15)
 	lcall sub32
 	jnb oven_on_flag, State3Shutdown
-	;%%%%%% turn on SSR
-	;lcall ;{whatever check_temp function label is at the start}
+	setb OVEN_POWER
+	;lcall ;%%%%{whatever check_temp function label is at the start}
 	lcall E_shutoff
 	lcall Max_T_shutoff
 	Load_y(Current_Temp_Bin)
 	lcall x_gteq_y
 	jb mf, State3RampReflow
+	setb state_transitioning
 	ljmp State4HoldReflow
 
 State4Shutdown:
 	ljmp State5Shutdown
 State4HoldReflow:
-	;%%%%%% set the state flag to 4
+	jnb seconds_flag, State4HoldReflow
+	clr seconds_flag
+	mov State_flag, #4
+	clr state_transitioning
 	jnb oven_on_flag, State4Shutdown
-	;lcall ;{whatever check_temp function label is at the start}
+	;lcall ;%%%%{whatever check_temp function label is at the start}
 	lcall Max_T_shutoff
 	Load_x(Time_Elapsed_Bin)
 	Load_y(Reflow_Time_Bin)
@@ -215,9 +378,20 @@ State4HoldReflow:
 	jnb mf, State4HoldReflow
 
 State5Shutdown:
-	;%%%%%%% set the state flag to 5
-	;%%%%%turn off SSR
-	lcall ;{whatever check_temp function label is at the start}
+	jnb seconds_flag, State5Shutdown
+	clr seconds_flag
+	mov State_flag, #5
+	clr OVEN_POWER
+	lcall ;%%%{whatever check_temp function label is at the start}
+	jnb e_shutdown_flag, RegShutdown:
+	Load_y(20)
+RegShutdown:
+	Load_y(10)
+	Load_x(Time_Elapsed_Bin)
+	lcall x_gteq_y
+	jb mf LeavingState5
+	cpl SOUND_OUT
+LeavingState5:
 	ljmp State0Setting
 	
 E_shutoff: 
