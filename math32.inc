@@ -566,5 +566,15 @@ Store_X_var MAC
     mov %0+2, x+2
     mov %0+3, x+3
 ENDMAC
+
+Load_BCD_4byte MAC
+    mov bcd+0, %0+0   ; lowest 2 digits
+    mov bcd+1, %0+1
+    mov bcd+2, %0+2
+    mov bcd+3, %0+3
+    clr a
+    mov bcd+4, a      ; highest digits unused / zero
+ENDMAC
 	
 $LIST
+
