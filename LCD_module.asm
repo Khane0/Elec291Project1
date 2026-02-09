@@ -1,17 +1,15 @@
-;==================== LCD MODULE (FINAL) ====================
-; 16x2 HD44780-compatible LCD, 4-bit mode
+;==================== LCD MODULE update 8/2 ====================
 ; Line1:  T=123C t=45s
 ; Line2:  ST: S_RAMP / S_HOLD / R_RAMP / R_HOLD / IDLE / ERROR
 ;
-; Depends on these external variables (same names as your project):
 ;   State_flag      ; byte, 0..5
 ;   e_shutdown_flag ; bit
-;   curr_temp       ; BCD bytes from your Read_ADC -> hex2bcd
+;   curr_temp       ; BCD bytes from Read_ADC -> hex2bcd
 ;                  ; curr_temp+1: hundreds digit in low nibble
 ;                  ; curr_temp+0: tens in high nibble, ones in low nibble
-;   Time_Elapsed    ; BCD (00..99) seconds (your ISR uses DA)
+;   Time_Elapsed    ; BCD (00..99) seconds
 ;
-; Pins (edit if your wiring differs):
+; Pins
 LCD_RS   equ P1.3
 LCD_E    equ P1.4
 LCD_D4   equ P0.0
@@ -20,15 +18,19 @@ LCD_D6   equ P0.2
 LCD_D7   equ P0.3
 
 ;-------- internal RAM used by LCD module --------
-LCD_last_state  EQU  60h   ; 1 byte in internal RAM
+DSEG at 30h
+LCD_last_state: DS 1
 
 ;-------- short state strings (pad to 8 chars) --------
-ST_IDLE:    db "IDLE    ",0
-ST_S_RAMP:  db "S_RAMP  ",0
-ST_S_HOLD:  db "S_HOLD  ",0
-ST_R_RAMP:  db "R_RAMP  ",0
-ST_R_HOLD:  db "R_HOLD  ",0
-ST_ERROR:   db "ERROR   ",0
+CSEG
+
+ST_IDLE:    DB 'IDLE    ', 0
+ST_S_RAMP:  DB 'S_RAMP  ', 0
+ST_S_HOLD:  DB 'S_HOLD  ', 0
+ST_R_RAMP:  DB 'R_RAMP  ', 0
+ST_R_HOLD:  DB 'R_HOLD  ', 0
+ST_ERROR:   DB 'ERROR   ', 0
+
 
 ;==================== Low-level write ====================
 LCD_WriteNibble:
@@ -89,6 +91,8 @@ LCD_Init:
     lcall LCD_Delay20ms
 
     ; 4-bit init sequence
+    mov LCD_last_state, #0FFh
+
     mov a, #03h
     lcall LCD_WriteNibble
     lcall LCD_Delay5ms
