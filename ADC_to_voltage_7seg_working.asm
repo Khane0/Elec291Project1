@@ -22,35 +22,22 @@ bseg
 mf:		dbit 1
 
 FREQ   EQU 33333333
-BAUD   EQU 115200
-;T2LOAD EQU 65536-(FREQ/(32*BAUD))
-T1LOAD    EQU (256-((2*FREQ)/(12*32*BAUD)))
-
+BAUD   EQU 57600 ;115200
+T2LOAD EQU 256-((FREQ*2)/(32*12*BAUD))
 
 CSEG
 
 InitSerialPort:
-	; Configure serial port and baud rate
-;	clr TR2 ; Disable timer 0
-;	mov T2CON, #30H ; RCLK=1, TCLK=1 
-;	mov RCAP2H, #high(T2LOAD)  
-;	mov RCAP2L, #low(T2LOAD)
-;	setb TR2 ; Enable timer 1
-;	mov SCON, #52H
-;	ret
 
-
-	clr TR1 ; disablee time 1
-    anl TMOD, #0x0F
-    orl TMOD, #0x20
-    orl PCON, #080H
-
-    mov TH1, #low(T1LOAD)
-    mov TL1, #low(T1LOAD)
-
-    setb TR1
-    mov SCON, #052H
-    setb TI
+clr TR1 ; Disable timer 1
+	mov TMOD, #020H ; Set timer 1 as 8-bit auto reload
+	mov TH1, #T2LOAD
+	mov TL1, #0
+	mov a, PCON ; Set SMOD to 1
+	orl a, #80H
+	mov PCON, a
+	setb TR1 ; Enable timer 1
+	mov SCON, #52H
 ret
 
 putchar:
