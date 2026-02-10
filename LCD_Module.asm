@@ -1,76 +1,274 @@
-$MODMAX10
+; ====================================================================
+; LCD_Module.asm - 针对 DE10-Lite (MAX10) 优化的 4-bit 驱动
+; ====================================================================
+LCD_RS    equ P1.7
+LCD_E     equ P1.5
+LCD_D4    equ P0.7
+LCD_D5    equ P0.5
+LCD_D6    equ P0.3
+LCD_D7    equ P0.1
+; --- 底层硬件延时 ---
+DelaySmall:
+    mov r7, #80
+DSS1: mov r6, #255
+DSS2: djnz r6, DSS2
+     djnz r7, DSS1
+     ret
 
-; Reset vector
-org 0x0000
-    ljmp main
+DelayMs:
+    push ar0
+    push ar1
+DM3: mov r1, #74
+DM2: mov r0, #250
+DM1: djnz r0, DM1
+     djnz r1, DM2
+     djnz r2, DM3
+    pop ar1
+    pop ar0
+    ret
 
-; External interrupt 0 vector (not used in this code)
-org 0x0003
-	reti
+; --- LCD 4-bit 原始驱动 ---
+LCD_pulse:
+    setb LCD_E
+    lcall DelaySmall
+    clr LCD_E
+    lcall DelaySmall
+    ret
 
-; Timer/Counter 0 overflow interrupt vector
-;org 0x000B
-	;ljmp Timer0_ISR
+LCD_byte:
+    ; 发送高 4 位
+    mov c, ACC.7
+    mov LCD_D7, c
+    mov c, ACC.6
+    mov LCD_D6, c
+    mov c, ACC.5
+    mov LCD_D5, c
+    mov c, ACC.4
+    mov LCD_D4, c
+    lcall LCD_pulse
+    ; 发送低 4 位
+    mov c, ACC.3
+    mov LCD_D7, c
+    mov c, ACC.2
+    mov LCD_D6, c
+    mov c, ACC.1
+    mov LCD_D5, c
+    mov c, ACC.0
+    mov LCD_D4, c
+    lcall LCD_pulse
+    ret
 
-; External interrupt 1 vector (not used in this code)
-org 0x0013
-	reti
+LCD_cmd:
+    clr LCD_RS
+    lcall LCD_byte
+    lcall DelaySmall
+    ret
 
-; Timer/Counter 1 overflow interrupt vector (not used in this code)
-org 0x001B
-	reti
+LCD_data:
+    setb LCD_RS
+    lcall LCD_byte
+    lcall DelaySmall
+    ret
 
-; Serial port receive/transmit interrupt vector (not used in this code)
-org 0x0023 
-	reti
-	
-dseg at 0x30
-;These variable will be stored in BCD format. They need to be displayed in each corner of the LCD in state zero
-;None of these will be set by the LCD, just printed. So for testing purposes, you can probably set them to some constant values
-Soak_Temp: ds 4
-Soak_Time: ds 4
-Reflow_Temp: ds 4
-Reflow_Time: ds 4
-;Time elapsed also in BCD format needs to be displayed in all states except state zero.
-Time_Elapsed: ds 4
-;Temperature is printed on the seven seg, not LCD
+LCD_init:
+    clr LCD_E
+    mov r2, #80
+    lcall DelayMs
+    mov a, #033h
+    lcall LCD_cmd
+    mov r2, #10
+    lcall DelayMs
+    mov a, #033h
+    lcall LCD_cmd
+    mov r2, #10
+    lcall DelayMs
+    mov a, #032h
+    lcall LCD_cmd
+    mov r2, #10
+    lcall DelayMs
+    mov a, #028h  ; 4-bit, 2 line
+    lcall LCD_cmd
+    mov a, #00Ch  ; display on
+    lcall LCD_cmd
+    mov a, #006h  ; entry mode
+    lcall LCD_cmd
+    mov a, #001h  ; clear display
+    lcall LCD_cmd
+    mov r2, #20
+    lcall DelayMs
+    ret
 
-;Print different things based on the state we are in. State is set by the main module and not modified by LCD.
-;Use push buttons or switches for debugging/testing different states.
-State_flag: ds 1 ;states will probably be numbers 0-5
+PrintString:
+    clr a
+    movc a, @a+dptr
+    jz PrintDone
+    lcall LCD_data
+    inc dptr
+    sjmp PrintString
+PrintDone:
+    ret
 
-bcd: ds 4
-x:   ds 4
-y:   ds 4
+; ====================================================================
+; 高级显示功能 (由 FSM 调用)
+; ====================================================================
 
-bseg
+; 显示设定页面 (State 0 使用)
+LCD_ShowSettings:
+    mov a, #080H        ; 第一行
+    lcall LCD_cmd
+    mov dptr, #STR_SOAK
+    lcall PrintString
+    mov r0, #0x34       ; Soak_Temp 地址
+    lcall LCD_PrintTemp3_R0
+    
+    mov a, #0C0H        ; 第二行
+    lcall LCD_cmd
+    mov dptr, #STR_REFL
+    lcall PrintString
+    mov r0, #0x37       ; Reflow_Temp 地址
+    lcall LCD_PrintTemp3_R0
+    ret
 
-oven_on_flag: dbit 1
+; 显示运行页面 (State 1-5 使用)
+LCD_ShowRun:
+    mov a, #080H        ; 第一行显示温度
+    lcall LCD_cmd
+    mov dptr, #STR_T
+    lcall PrintString
+    lcall LCD_PrintTemp3_curr
+    mov dptr, #STR_TJ
+    lcall PrintString
 
-cseg
-;Here are some pins that I copy and pasted from one of joses example asm files. You might have to change these. I am not sure.
-;Ask for a picture of my circuit if you need some help setting it up or look through jose examples
-ELCD_RS equ P1.7
-;ELCD_RW equ Px.x ; Not used.  Connected to ground. Double check this please; this one is assigned to a pin in one of jose examples.
-ELCD_E  equ P1.1
-ELCD_D4 equ P0.7
-ELCD_D5 equ P0.5
-ELCD_D6 equ P0.3
-ELCD_D7 equ P0.1
+    mov a, #0C0H        ; 第二行显示时间和状态
+    lcall LCD_cmd
+    lcall LCD_PrintTime2_Elapsed
+    mov dptr, #STR_SEC
+    lcall PrintString
 
-$NOLIST
-;One includes the ELCD_RW and one doesn't. We were having issues when using the no_RW, so it might be worth experimenting with both
-;$include(LCD_4bit_DE10Lite.inc)
-$include(LCD_4bit_DE10Lite_no_RW.inc)
-$LIST
+    ; 状态文字分支
+    jb e_shutdown_flag, _MSG_ERR
+    mov a, State_flag
+    cjne a, #0, _MSG_S1
+    jb oven_on_flag, _MSG_ACT
+    mov dptr, #ST_IDLE
+    sjmp _MSG_DO
+_MSG_ACT: mov dptr, #ST_ACT
+    sjmp _MSG_DO
+_MSG_S1: cjne a, #1, _MSG_S2
+    mov dptr, #ST_RAMP
+    sjmp _MSG_DO
+_MSG_S2: cjne a, #2, _MSG_S3
+    mov dptr, #ST_SOAK
+    sjmp _MSG_DO
+_MSG_S3: cjne a, #3, _MSG_S4
+    mov dptr, #ST_RAMP
+    sjmp _MSG_DO
+_MSG_S4: cjne a, #4, _MSG_S5
+    mov dptr, #ST_SOAK
+    sjmp _MSG_DO
+_MSG_S5: mov dptr, #ST_COOL
+_MSG_DO:
+    lcall PrintString
+    ret
+_MSG_ERR:
+    mov dptr, #ST_ERROR
+    lcall PrintString
+    ret
 
-LCD_print:
+; --- 内部辅助子程序 ---
 
-main: ; This should just be for initiallizing things
-	mov SP, #0x7F
-	lcall ELCD_4BIT ; Configure LCD in four bit mode
-testing_loop: ;Try to keep the amount of instructions in the loop minimal and easy to remove instructions that you use only for testing purposes
-	lcall LCD_print
-	sjmp testing_loop
+; 打印 R0 指向的 BCD 温度 (3位)
+LCD_PrintTemp3_R0:
+    inc r0              ; 移动到百位地址
+    mov a, @r0
+    anl a, #0Fh
+    add a, #'0'
+    lcall LCD_data
+    dec r0              ; 移动回十位个位地址
+    mov a, @r0
+    swap a
+    anl a, #0Fh
+    add a, #'0'
+    lcall LCD_data
+    mov a, @r0
+    anl a, #0Fh
+    add a, #'0'
+    lcall LCD_data
+    ret
 
-END
+; 打印当前温度 (读取 33H 和 34H)
+; --- 内部辅助子程序 ---
+
+; 打印当前温度 (读取 Temp_High=0x35 和 Temp_Low=0x34)
+LCD_PrintTemp3_curr:
+    push acc
+    push ar0
+    
+    ; 1. 打印百位
+    mov r0, #Temp_High       ; 显式使用 EQU 名字 (0x35)
+    mov a, @r0
+    anl a, #0Fh
+    add a, #'0'
+    lcall LCD_data
+    
+    ; 2. 打印十位
+    mov r0, #Temp_Low        ; 显式使用 EQU 名字 (0x34)
+    mov a, @r0
+    swap a                   ; 取高4位（十位）
+    anl a, #0Fh
+    add a, #'0'
+    lcall LCD_data
+    
+    ; 3. 打印个位
+    mov a, @r0               ; 重新读一次低位字节
+    anl a, #0Fh              ; 取低4位（个位）
+    add a, #'0'
+    lcall LCD_data
+    
+    pop ar0
+    pop acc
+    ret
+
+; 打印运行时间 (读取 Time_Elapsed_High=0x33 和 Time_Elapsed_Low=0x32)
+LCD_PrintTime2_Elapsed:
+    push acc
+    push ar0
+
+    ; 1. 打印百位
+    mov r0, #Time_Elapsed_High ; (0x33)
+    mov a, @r0
+    anl a, #0Fh
+    add a, #'0'
+    lcall LCD_data
+    
+    ; 2. 打印十位
+    mov r0, #Time_Elapsed_Low  ; (0x32)
+    mov a, @r0
+    swap a
+    anl a, #0Fh
+    add a, #'0'
+    lcall LCD_data
+    
+    ; 3. 打印个位
+    mov a, @r0
+    anl a, #0Fh
+    add a, #'0'
+    lcall LCD_data
+    
+    pop ar0
+    pop acc
+    ret
+    
+STR_SOAK: DB 'SOAK ', 0
+STR_REFL: DB 'REFL ', 0
+STR_T:    DB 'T=', 0
+STR_TJ:   DB 'C Tj=22C', 0
+STR_SEC:  DB 's ', 0
+
+ST_COOL: DB 'COOL DOWN ', 0
+
+ST_IDLE: DB 'IDLE      ',0
+ST_ACT:  DB 'ACTIVATION',0
+ST_RAMP: DB 'RAMP UP   ',0
+ST_SOAK: DB 'SOAKING   ',0
+ST_ERROR:DB 'ERROR     ',0
