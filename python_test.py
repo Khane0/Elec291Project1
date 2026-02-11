@@ -41,10 +41,9 @@ xsize=100
 def data_gen():
     global ser, ser2, connected
 
-    # === [MINIMAL FIX] make this a real generator that never ends ===
     while True:
 
-        # [MINIMAL FIX] if not connected, keep trying but DO NOT return (return would stop animation)
+
         if connected == 0:
             FindPort()     
             yield -1, 0    # keep animation alive
